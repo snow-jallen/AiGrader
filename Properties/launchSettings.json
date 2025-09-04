@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "AiGrader": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:57655;http://localhost:57656"
+    }
+  }
+}

@@ -1,0 +1,256 @@
+@page "/"
+@using AiGrader.Services
+@using AiGrader.Models
+@using AiGrader.Components
+@inject ICanvasApiService CanvasService
+@inject IAiAnalysisService AiService
+
+<PageTitle>AI Grader</PageTitle>
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Canvas Assignment Analyzer</h3>
+                </div>
+                <div class="card-body">
+                    @if (!_isProcessing && _analysis == null)
+                    {
+                        <div class="mb-3">
+                            <label for="assignmentUrl" class="form-label">Canvas Assignment URL:</label>
+                            <input type="url" class="form-control" id="assignmentUrl" @bind="_assignmentUrl" 
+                                   placeholder="https://snow.instructure.com/courses/1155292/assignments/16826744" />
+                            <div class="form-text">
+                                Paste the full URL of your Canvas assignment here.
+                            </div>
+                        </div>
+                        
+                        <button class="btn btn-primary" @onclick="AnalyzeAssignment" disabled="@(string.IsNullOrWhiteSpace(_assignmentUrl))">
+                            <i class="fas fa-search"></i> Analyze Assignment
+                        </button>
+                    }
+
+                    @if (_isProcessing)
+                    {
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">@_statusMessage</p>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_errorMessage))
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            <strong>Error:</strong> @_errorMessage
+                            <button type="button" class="btn btn-sm btn-outline-secondary ms-2" @onclick="Reset">
+                                Try Again
+                            </button>
+                        </div>
+                    }
+
+                    @if (_analysis != null)
+                    {
+                        <div class="analysis-results">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h4>Analysis Results</h4>
+                                <button class="btn btn-secondary btn-sm" @onclick="Reset">
+                                    <i class="fas fa-arrow-left"></i> New Analysis
+                                </button>
+                            </div>
+
+                            <div class="row mb-4">
+                                <div class="col-md-3">
+                                    <div class="card bg-light">
+                                        <div class="card-body text-center">
+                                            <h5>@_analysis.Statistics.TotalSubmissions</h5>
+                                            <small>Total Submissions</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-light">
+                                        <div class="card-body text-center">
+                                            <h5>@(_analysis.Statistics.AverageWordCount.ToString("F0"))</h5>
+                                            <small>Avg Word Count</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-light">
+                                        <div class="card-body text-center">
+                                            <h5>@_analysis.Statistics.ShortestSubmission</h5>
+                                            <small>Shortest</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-light">
+                                        <div class="card-body text-center">
+                                            <h5>@_analysis.Statistics.LongestSubmission</h5>
+                                            <small>Longest</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h5><i class="fas fa-chart-line"></i> Overall Summary</h5>
+                                </div>
+                                <div class="card-body">
+                                    <MarkdownRenderer Content="@_analysis.Summary" />
+                                </div>
+                            </div>
+
+                            @if (_analysis.StandoutSubmissions.Any())
+                            {
+                                <div class="card mb-4">
+                                    <div class="card-header">
+                                        <h5><i class="fas fa-star"></i> Standout Submissions (@_analysis.StandoutSubmissions.Count)</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        @foreach (var standout in _analysis.StandoutSubmissions)
+                                        {
+                                            <div class="border-start border-warning ps-3 mb-3">
+                                                <h6>@standout.StudentName</h6>
+                                                <small class="text-muted">@standout.StandoutReason (@standout.WordCount words)</small>
+                                                <div class="mt-2">
+                                                    <MarkdownRenderer Content="@standout.Analysis" />
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            @if (_analysis.SuspiciousSimilarities.Any())
+                            {
+                                <div class="card mb-4">
+                                    <div class="card-header">
+                                        <h5><i class="fas fa-exclamation-triangle text-warning"></i> Suspicious Similarities (@_analysis.SuspiciousSimilarities.Count groups)</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        @foreach (var group in _analysis.SuspiciousSimilarities)
+                                        {
+                                            <div class="border-start border-danger ps-3 mb-3">
+                                                <h6>Similar Submissions (Score: @group.SimilarityScore.ToString("P0"))</h6>
+                                                <p><strong>Students:</strong> @string.Join(", ", group.StudentNames)</p>
+                                                <p><strong>Reason:</strong> @group.Reason</p>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _assignmentUrl = "";
+    private string _statusMessage = "";
+    private string _errorMessage = "";
+    private bool _isProcessing = false;
+    private OverallAnalysis? _analysis = null;
+
+    private async Task AnalyzeAssignment()
+    {
+        try
+        {
+            _isProcessing = true;
+            _errorMessage = "";
+            _analysis = null;
+
+            _statusMessage = "Fetching assignment details...";
+            StateHasChanged();
+
+            var assignment = await CanvasService.GetAssignmentFromUrlAsync(_assignmentUrl);
+            if (assignment == null)
+            {
+                _errorMessage = "Could not fetch assignment details. Please check the URL and your API token.";
+                return;
+            }
+
+            _statusMessage = "Downloading submissions...";
+            StateHasChanged();
+
+            var submissions = await CanvasService.GetSubmissionsAsync(assignment.CourseId, assignment.Id);
+            if (!submissions.Any())
+            {
+                _errorMessage = "No submissions found for this assignment.";
+                return;
+            }
+
+            _statusMessage = "Fetching student information...";
+            StateHasChanged();
+
+            var userIds = submissions.Select(s => s.UserId).Distinct().ToList();
+            var users = await CanvasService.GetUsersAsync(assignment.CourseId, userIds);
+
+            _statusMessage = "Preparing submissions for analysis...";
+            StateHasChanged();
+
+            var submissionAnalyses = new List<SubmissionAnalysis>();
+            
+            foreach (var submission in submissions)
+            {
+                if (users.TryGetValue(submission.UserId, out var user))
+                {
+                    var content = submission.Body ?? "";
+                    
+                    // Download attachment content if available
+                    if (submission.Attachments?.Any() == true)
+                    {
+                        foreach (var attachment in submission.Attachments)
+                        {
+                            try
+                            {
+                                var attachmentContent = await CanvasService.DownloadAttachmentAsync(attachment.Url);
+                                content += $"\n\n[Attachment: {attachment.Filename}]\n{attachmentContent}";
+                            }
+                            catch
+                            {
+                                content += $"\n\n[Attachment: {attachment.Filename} - Could not download]";
+                            }
+                        }
+                    }
+
+                    submissionAnalyses.Add(new SubmissionAnalysis
+                    {
+                        StudentName = user.Name,
+                        SubmissionContent = content
+                    });
+                }
+            }
+
+            _statusMessage = "Analyzing submissions with AI...";
+            StateHasChanged();
+
+            _analysis = await AiService.AnalyzeSubmissionsAsync(submissionAnalyses, assignment.Name);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Reset()
+    {
+        _assignmentUrl = "";
+        _statusMessage = "";
+        _errorMessage = "";
+        _analysis = null;
+        _isProcessing = false;
+    }
+}
