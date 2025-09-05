@@ -16,7 +16,12 @@
     {
         <div class="assignment-header">
             <div class="assignment-info">
-                <h3>@Assignment.Name</h3>
+                <h3>
+                    <a href="https://snow.instructure.com/courses/@Assignment.CourseId/assignments/@Assignment.Id" target="_blank" rel="noopener noreferrer" class="assignment-title-link">
+                        @Assignment.Name
+                        <i class="fas fa-external-link-alt ms-1 small" title="Open in Canvas"></i>
+                    </a>
+                </h3>
                 <p class="text-muted">@Assignment.Course.CourseCode - @Assignment.Course.Name</p>
             </div>
             
@@ -537,6 +542,18 @@
     .assignment-info h3 {
         margin-bottom: 0.5rem;
         color: #495057;
+    }
+    .assignment-title-link {
+        color: inherit;
+        text-decoration: none;
+        position: relative;
+    }
+    .assignment-title-link:hover, .assignment-title-link:focus {
+        text-decoration: underline;
+    }
+    .assignment-title-link .small {
+        font-size: 0.65em;
+        opacity: 0.75;
     }
     
     .action-buttons {

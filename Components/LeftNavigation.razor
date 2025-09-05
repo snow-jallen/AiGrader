@@ -104,9 +104,7 @@
                                         <div class="assignment-content">
                                             <div class="assignment-main">
                                                 <div class="assignment-title-section">
-                                                    <span class="assignment-name" title="@assignment.Name">
-                                                        @assignment.Name
-                                                    </span>
+                                                    <span class="assignment-name" title="@assignment.Name">@assignment.Name</span>
                                                     <div class="assignment-status-icons">
                                                         @if (assignment.Published)
                                                         {
@@ -535,15 +533,40 @@
         border-color: #007bff;
     }
     
-    .assignment-item.selected {
-        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
-        color: white;
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0,123,255,0.3), 0 3px 6px rgba(0,123,255,0.2);
+    /* Improved contrast for selected assignment */
+    :root {
+        --selected-assignment-bg: #0d6efd;          /* Bootstrap primary */
+        --selected-assignment-bg-hover: #0b5ed7;    /* Darker on hover */
+        --selected-assignment-border: #084298;      /* Accessible border */
     }
-    
-    .assignment-item.selected:hover {
-        background: linear-gradient(135deg, #0056b3 0%, #004085 100%);
+
+    .assignment-item.selected {
+        background: var(--selected-assignment-bg);
+        color: #ffffff;
+        transform: translateY(-2px);
+        border-color: var(--selected-assignment-border);
+        box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--selected-assignment-bg), 0 6px 16px rgba(13,110,253,0.35);
+    }
+
+    .assignment-item.selected:hover,
+    .assignment-item.selected:focus-within {
+        background: var(--selected-assignment-bg-hover);
+        box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--selected-assignment-bg-hover), 0 8px 20px rgba(13,110,253,0.45);
+    }
+
+    /* Ensure small date text remains fully legible when selected */
+    .assignment-item.selected .assignment-due-date { opacity: 1; }
+    .assignment-item.selected .assignment-due-date small { color: #ffffff; }
+
+    /* High contrast user preference */
+    @@media (prefers-contrast: more) {
+        .assignment-item.selected {
+            background: #003e99; /* Darker for stronger contrast */
+            box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px #003e99;
+        }
+        .assignment-item.selected:hover {
+            background: #002e73;
+        }
     }
     
     .assignment-content {
