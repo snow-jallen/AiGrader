@@ -12,6 +12,15 @@ public class Assignment
     
     [JsonPropertyName("course_id")]
     public long CourseId { get; set; }
+    
+    [JsonPropertyName("due_at")]
+    public DateTime? DueAt { get; set; }
+    
+    [JsonPropertyName("published")]
+    public bool Published { get; set; }
+    
+    [JsonPropertyName("points_possible")]
+    public double? PointsPossible { get; set; }
 }
 
 public class Submission
@@ -33,6 +42,9 @@ public class Submission
     
     [JsonPropertyName("workflow_state")]
     public string WorkflowState { get; set; } = string.Empty;
+    
+    [JsonPropertyName("grade")]
+    public string? Grade { get; set; }
     
     [JsonPropertyName("attachments")]
     public List<Attachment>? Attachments { get; set; }
@@ -63,4 +75,19 @@ public class User
     
     [JsonPropertyName("sortable_name")]
     public string SortableName { get; set; } = string.Empty;
+}
+
+public class Course
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+    
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+    
+    [JsonPropertyName("course_code")]
+    public string CourseCode { get; set; } = string.Empty;
+    
+    [JsonPropertyName("workflow_state")]
+    public string WorkflowState { get; set; } = string.Empty;
 }

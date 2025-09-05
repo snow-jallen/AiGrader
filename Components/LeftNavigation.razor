@@ -1,0 +1,663 @@
+@using AiGrader.Models
+@using AiGrader.Services
+@inject ICanvasDataService CanvasDataService
+@inject IJSRuntime JSRuntime
+
+<div class="left-nav">
+    <div class="nav-header">
+        <h5>Assignments</h5>
+        <div class="header-controls">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="showHiddenSwitch" @bind="_showHidden" @bind:after="OnShowHiddenChanged">
+                <label class="form-check-label" for="showHiddenSwitch">
+                    Show Hidden
+                </label>
+            </div>
+            <button class="btn btn-sm btn-outline-primary" @onclick="SyncData" disabled="@_isSyncing">
+                @if (_isSyncing)
+                {
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                }
+                else
+                {
+                    <i class="fas fa-sync me-1"></i>
+                }
+                Sync
+            </button>
+        </div>
+    </div>
+    
+    <div class="filter-section">
+        <input type="text" class="form-control form-control-sm" 
+               placeholder="Filter assignments..." 
+               @bind="_filterText" 
+               @bind:event="oninput" 
+               @onkeyup="FilterChanged" />
+    </div>
+    
+    @if (_isLoading)
+    {
+        <div class="loading-section">
+            <div class="spinner-border spinner-border-sm me-2"></div>
+            <span>Loading...</span>
+        </div>
+    }
+    else if (_courses?.Any() == true)
+    {
+        <div class="tree-view">
+            @foreach (var course in _filteredCourses)
+            {
+                <div class="course-node @(course.IsHidden ? "hidden-course" : "")">
+                    <div class="course-header" @onclick="() => ToggleCourse(course.Id)">
+                        <i class="fas @(_expandedCourses.Contains(course.Id) ? "fa-chevron-down" : "fa-chevron-right") me-2"></i>
+                        @if (_editingCourseId == course.Id)
+                        {
+                            <div class="edit-inline d-flex align-items-center flex-grow-1">
+                                <input type="text" class="form-control form-control-sm course-name-edit me-1" 
+                                       placeholder="Course display name" 
+                                       @bind="_editingCourseName" 
+                                       @onkeydown="(e) => HandleCourseNameKeyDown(e, course.Id)"
+                                       @onclick:stopPropagation="true"
+                                       @ref="_courseNameInput" />
+                                <button class="btn btn-sm btn-success me-1" title="Save" @onclick="(e)=>SaveCourseName(course.Id)" @onclick:stopPropagation="true">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                                <button class="btn btn-sm btn-secondary" title="Cancel" @onclick="(e)=>CancelEditCourseName(e)" @onclick:stopPropagation="true">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="course-name" title="@course.DisplayName" 
+                                  @ondblclick="(e) => StartEditCourseName(e, course.Id, course.DisplayName)" 
+                                  @ondblclick:stopPropagation="true">
+                                @(GetDisplayName(course)) (@course.CourseCode)
+                            </span>
+                        }
+                        <span class="assignment-count">(@course.Assignments.Count)</span>
+                        <div class="course-actions">
+                            <button class="btn btn-sm btn-link p-0 me-1" 
+                                    @onclick="(e) => StartEditCourseName(e, course.Id, course.DisplayName)" 
+                                    @onclick:stopPropagation="true"
+                                    title="Edit course name">
+                                <i class="fas fa-edit text-muted"></i>
+                            </button>
+                            <button class="btn btn-sm btn-link p-0 me-1" 
+                                    @onclick="(e) => ToggleCourseVisibility(e, course.Id, course.IsHidden)" 
+                                    @onclick:stopPropagation="true"
+                                    title="@(course.IsHidden ? "Show course" : "Hide course")">
+                                <i class="fas @(course.IsHidden ? "fa-eye" : "fa-eye-slash") text-muted"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    @if (_expandedCourses.Contains(course.Id))
+                    {
+                        <div class="assignments-list">
+                            @if (course.Assignments.Any())
+                            {
+                                @foreach (var assignment in course.Assignments)
+                                {
+                                    <div class="assignment-item @(assignment.Id == _selectedAssignmentId ? "selected" : "")"
+                                         @onclick="() => SelectAssignment(assignment)">
+                                        <div class="assignment-content">
+                                            <div class="assignment-main">
+                                                <div class="assignment-title-section">
+                                                    <span class="assignment-name" title="@assignment.Name">
+                                                        @assignment.Name
+                                                    </span>
+                                                    <div class="assignment-status-icons">
+                                                        @if (assignment.Published)
+                                                        {
+                                                            <i class="fas fa-check-circle status-published" title="Published"></i>
+                                                        }
+                                                        else
+                                                        {
+                                                            <i class="fas fa-eye-slash status-unpublished" title="Unpublished"></i>
+                                                        }
+                                                        
+                                                        @if (assignment.HasUngraded)
+                                                        {
+                                                            <span class="badge badge-ungraded" title="@assignment.UngradedCount ungraded submissions">
+                                                                @assignment.UngradedCount
+                                                            </span>
+                                                        }
+                                                        
+                                                        @if (assignment.HasDownloadedSubmissions)
+                                                        {
+                                                            <i class="fas fa-cloud-download-alt status-downloaded" title="Submissions downloaded"></i>
+                                                        }
+                                                        
+                                                        @if (assignment.IsOverdue)
+                                                        {
+                                                            <i class="fas fa-exclamation-triangle status-overdue" title="Past due date"></i>
+                                                        }
+                                                    </div>
+                                                </div>
+                                                @if (assignment.DueAt.HasValue)
+                                                {
+                                                    <div class="assignment-due-date">
+                                                        <small class="text-muted">
+                                                            Due: @assignment.DueAt.Value.ToString("MMM d, yyyy h:mm tt")
+                                                        </small>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="no-assignments">No assignments found</div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else if (!_isLoading)
+    {
+        <div class="empty-state">
+            <p>No courses found.</p>
+            <button class="btn btn-sm btn-primary" @onclick="SyncData">
+                <i class="fas fa-sync me-1"></i>
+                Load Courses
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback<DbAssignment> OnAssignmentSelected { get; set; }
+    
+    private List<DbCourse>? _courses;
+    private List<DbCourse> _filteredCourses = new();
+    private HashSet<long> _expandedCourses = new();
+    private long? _selectedAssignmentId;
+    private string _filterText = "";
+    private bool _isLoading = true;
+    private bool _isSyncing = false;
+    private bool _showHidden = false;
+    private long? _editingCourseId = null;
+    private string _editingCourseName = "";
+    private ElementReference _courseNameInput;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCourses();
+    }
+    
+    private async Task LoadCourses(bool forceSync = false)
+    {
+        try
+        {
+            _isLoading = true;
+            _courses = await CanvasDataService.GetCoursesAsync(forceSync: forceSync, includeHidden: _showHidden);
+            ApplyFilter();
+            
+            if (_courses.Any() && !_expandedCourses.Any())
+            {
+                _expandedCourses.Add(_courses.First().Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading courses: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+    
+    private async Task SyncData()
+    {
+        try
+        {
+            _isSyncing = true;
+            await CanvasDataService.SyncAllDataAsync();
+            await LoadCourses();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error syncing data: {ex.Message}");
+        }
+        finally
+        {
+            _isSyncing = false;
+        }
+    }
+    
+    private void ToggleCourse(long courseId)
+    {
+        if (_expandedCourses.Contains(courseId))
+        {
+            _expandedCourses.Remove(courseId);
+        }
+        else
+        {
+            _expandedCourses.Add(courseId);
+        }
+    }
+    
+    private async Task SelectAssignment(DbAssignment assignment)
+    {
+        _selectedAssignmentId = assignment.Id;
+        await OnAssignmentSelected.InvokeAsync(assignment);
+    }
+    
+    private void FilterChanged()
+    {
+        ApplyFilter();
+    }
+    
+    private void ApplyFilter()
+    {
+        if (_courses == null)
+        {
+            _filteredCourses = new();
+            return;
+        }
+        
+        if (string.IsNullOrWhiteSpace(_filterText))
+        {
+            _filteredCourses = _courses.ToList();
+            return;
+        }
+        
+        var filter = _filterText.ToLowerInvariant();
+        _filteredCourses = _courses.Where(course =>
+            course.Name.ToLowerInvariant().Contains(filter) ||
+            course.CourseCode.ToLowerInvariant().Contains(filter) ||
+            course.DisplayName.ToLowerInvariant().Contains(filter) ||
+            course.Assignments.Any(a => a.Name.ToLowerInvariant().Contains(filter))
+        ).Select(course => new DbCourse
+        {
+            Id = course.Id,
+            Name = course.Name,
+            CustomName = course.CustomName,
+            CourseCode = course.CourseCode,
+            WorkflowState = course.WorkflowState,
+            LastSynced = course.LastSynced,
+            IsHidden = course.IsHidden,
+            Assignments = course.Assignments
+                .Where(a => a.Name.ToLowerInvariant().Contains(filter))
+                .Select(a => new DbAssignment
+                {
+                    Id = a.Id,
+                    Name = a.Name,
+                    CourseId = a.CourseId,
+                    DueAt = a.DueAt,
+                    Published = a.Published,
+                    PointsPossible = a.PointsPossible,
+                    UngradedCount = a.UngradedCount,
+                    TotalSubmissions = a.TotalSubmissions,
+                    HasDownloadedSubmissions = a.HasDownloadedSubmissions,
+                    LocalSubmissionsPath = a.LocalSubmissionsPath,
+                    LastSynced = a.LastSynced
+                })
+                .ToList()
+        }).ToList();
+        
+        foreach (var course in _filteredCourses)
+        {
+            if (course.Assignments.Any())
+            {
+                _expandedCourses.Add(course.Id);
+            }
+        }
+    }
+    
+    private async Task OnShowHiddenChanged()
+    {
+        await LoadCourses();
+    }
+    
+    private async Task ToggleCourseVisibility(MouseEventArgs e, long courseId, bool isCurrentlyHidden)
+    {
+        try
+        {
+            await CanvasDataService.SetCourseHiddenAsync(courseId, !isCurrentlyHidden);
+            await LoadCourses();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error toggling course visibility: {ex.Message}");
+        }
+    }
+    
+    private async Task StartEditCourseName(MouseEventArgs e, long courseId, string currentName)
+    {
+        _editingCourseId = courseId;
+        _editingCourseName = currentName;
+        StateHasChanged();
+        await Task.Delay(1);
+        await _courseNameInput.FocusAsync();
+    }
+    
+    private async Task HandleCourseNameKeyDown(KeyboardEventArgs e, long courseId)
+    {
+        if (e.Key == "Enter")
+        {
+            await SaveCourseName(courseId);
+        }
+        else if (e.Key == "Escape")
+        {
+            CancelEdit();
+        }
+    }
+    
+    private async Task SaveCourseName(long courseId)
+    {
+        if (_editingCourseId == courseId)
+        {
+            try
+            {
+                await CanvasDataService.SetCourseCustomNameAsync(courseId, _editingCourseName);
+                await LoadCourses();
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error saving course name: {ex.Message}");
+            }
+            finally
+            {
+                CancelEdit();
+            }
+        }
+    }
+
+    private void CancelEditCourseName(MouseEventArgs e)
+    {
+        CancelEdit();
+    }
+
+    private void CancelEdit()
+    {
+        _editingCourseId = null;
+        _editingCourseName = string.Empty;
+    }
+    
+    private string GetDisplayName(DbCourse course)
+    {
+        var displayName = !string.IsNullOrWhiteSpace(course.CustomName) ? course.CustomName : course.Name;
+        Console.WriteLine($"GetDisplayName for course {course.Id}: CustomName='{course.CustomName}', Name='{course.Name}', Result='{displayName}'");
+        return displayName;
+    }
+}
+
+<style>
+    .left-nav {
+        height: 100vh;
+        background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);
+        border-right: 1px solid #dee2e6;
+        padding: 1rem;
+        overflow-y: auto;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+    }
+    
+    .nav-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 0.5rem;
+    }
+    
+    .nav-header h5 {
+        margin: 0;
+        color: #495057;
+    }
+    
+    .header-controls {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .form-check {
+        margin: 0;
+    }
+    
+    .form-check-label {
+        font-size: 0.875rem;
+        margin-left: 0.25rem;
+    }
+    
+    .filter-section {
+        margin-bottom: 1rem;
+    }
+    
+    .loading-section {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        color: #6c757d;
+    }
+    
+    .tree-view {
+        padding: 0;
+    }
+    
+    .course-node {
+        margin-bottom: 0.5rem;
+    }
+    
+    .course-header {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem;
+        cursor: pointer;
+        border-radius: 0.25rem;
+        background-color: #e9ecef;
+        font-weight: 500;
+        color: #495057;
+    }
+    
+    .course-header:hover {
+        background-color: #dee2e6;
+    }
+    
+    .hidden-course .course-header {
+        opacity: 0.6;
+        background-color: #f8f9fa;
+        border: 1px dashed #dee2e6;
+    }
+    
+    .hidden-course .course-header:hover {
+        background-color: #f1f3f4;
+    }
+    
+    .course-actions {
+        margin-left: 0.5rem;
+    }
+    
+    .course-actions button {
+        opacity: 0.7;
+        transition: opacity 0.2s;
+    }
+    
+    .course-actions button:hover {
+        opacity: 1;
+    }
+    
+    .course-name-edit {
+        flex: 1;
+        margin-right: 0.5rem;
+    }
+    
+    .course-name {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
+    
+    .assignment-count {
+        font-size: 0.875rem;
+        color: #6c757d;
+        margin-left: 0.5rem;
+    }
+    
+    .assignments-list {
+        margin-left: 1.5rem;
+        border-left: 2px solid #dee2e6;
+        padding-left: 0.5rem;
+    }
+    
+    .assignment-item {
+        padding: 0.75rem;
+        margin: 0.25rem 0;
+        cursor: pointer;
+        border-radius: 0.5rem;
+        transition: all 0.2s ease-in-out;
+        border: 1px solid transparent;
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+    }
+    
+    .assignment-item:nth-child(even) {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    }
+    
+    .assignment-item:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.12);
+        border-color: #007bff;
+    }
+    
+    .assignment-item.selected {
+        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+        color: white;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0,123,255,0.3), 0 3px 6px rgba(0,123,255,0.2);
+    }
+    
+    .assignment-item.selected:hover {
+        background: linear-gradient(135deg, #0056b3 0%, #004085 100%);
+    }
+    
+    .assignment-content {
+        width: 100%;
+    }
+    
+    .assignment-main {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .assignment-title-section {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .assignment-name {
+        flex: 1;
+        font-weight: 600;
+        font-size: 0.9rem;
+        line-height: 1.3;
+        word-break: break-word;
+        color: inherit;
+    }
+    
+    .assignment-status-icons {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        flex-shrink: 0;
+    }
+    
+    .assignment-due-date {
+        text-align: right;
+        opacity: 0.8;
+    }
+    
+    .assignment-due-date small {
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    
+    /* Status Icons */
+    .status-published {
+        color: #28a745;
+        font-size: 1.1em;
+    }
+    
+    .status-unpublished {
+        color: #6c757d;
+        font-size: 1em;
+    }
+    
+    .status-downloaded {
+        color: #17a2b8;
+        font-size: 1em;
+    }
+    
+    .status-overdue {
+        color: #dc3545;
+        font-size: 1em;
+        animation: pulse 2s infinite;
+    }
+    
+    @@keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
+    
+    .assignment-item.selected .status-published,
+    .assignment-item.selected .status-unpublished,
+    .assignment-item.selected .status-downloaded,
+    .assignment-item.selected .status-overdue {
+        color: rgba(255,255,255,0.9);
+    }
+    
+    .badge {
+        font-size: 0.7rem;
+        padding: 0.2rem 0.5rem;
+        border-radius: 1rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        font-weight: 700;
+        min-width: 1.5rem;
+        height: 1.5rem;
+        justify-content: center;
+    }
+    
+    .badge-ungraded {
+        background: linear-gradient(135deg, #fd7e14 0%, #e66a00 100%);
+        color: white;
+        box-shadow: 0 2px 4px rgba(253,126,20,0.3);
+    }
+    
+    .assignment-item.selected .badge-ungraded {
+        background: rgba(255,255,255,0.2);
+        color: white;
+    }
+    
+    .no-assignments {
+        padding: 0.5rem;
+        color: #6c757d;
+        font-style: italic;
+        font-size: 0.875rem;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 2rem;
+        color: #6c757d;
+    }
+</style>

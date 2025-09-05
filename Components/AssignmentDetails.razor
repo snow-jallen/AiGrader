@@ -1,0 +1,691 @@
+@using AiGrader.Models
+@using AiGrader.Services
+@inject ICanvasDataService CanvasDataService
+@inject IAiAnalysisService AiService
+
+<div class="assignment-details">
+    @if (Assignment == null)
+    {
+        <div class="empty-state">
+            <i class="fas fa-arrow-left fa-2x text-muted mb-3"></i>
+            <h4>Select an Assignment</h4>
+            <p class="text-muted">Choose an assignment from the left panel to view details and download submissions.</p>
+        </div>
+    }
+    else
+    {
+        <div class="assignment-header">
+            <div class="assignment-info">
+                <h3>@Assignment.Name</h3>
+                <p class="text-muted">@Assignment.Course.CourseCode - @Assignment.Course.Name</p>
+            </div>
+            
+            <div class="action-buttons">
+                <button class="btn btn-outline-primary me-2" @onclick="RefreshSubmissions" disabled="@_isLoading">
+                    @if (_isRefreshing)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    else
+                    {
+                        <i class="fas fa-sync me-1"></i>
+                    }
+                    Refresh
+                </button>
+                
+                <button class="btn btn-primary" @onclick="DownloadSubmissions" disabled="@(_isLoading || _isDownloading)">
+                    @if (_isDownloading)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    else
+                    {
+                        <i class="fas fa-download me-1"></i>
+                    }
+                    Download Submissions
+                </button>
+            </div>
+        </div>
+        
+        @if (_isLoading)
+        {
+            <div class="loading-section">
+                <div class="spinner-border me-2"></div>
+                <span>@_statusMessage</span>
+            </div>
+        }
+        
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <div class="alert alert-danger">
+                <strong>Error:</strong> @_errorMessage
+                <button type="button" class="btn btn-sm btn-outline-danger ms-2" @onclick="ClearError">
+                    Dismiss
+                </button>
+            </div>
+        }
+        
+        @if (_submissions?.Any() == true)
+        {
+            <div class="submissions-section">
+                <div class="submissions-header">
+                    <h5>Submissions (@_submissions.Count)</h5>
+                    @if (Assignment.HasDownloadedSubmissions)
+                    {
+                        <div class="download-status">
+                            <i class="fas fa-check-circle text-success me-1"></i>
+                            <span class="text-success">Downloaded to: @Assignment.LocalSubmissionsPath</span>
+                        </div>
+                    }
+                </div>
+                
+                <div class="submissions-list">
+                    @foreach (var submission in _submissions.Take(10))
+                    {
+                        <div class="submission-card">
+                            <div class="submission-header">
+                                <strong>@submission.StudentName</strong>
+                                @if (submission.SubmittedAt.HasValue)
+                                {
+                                    <span class="text-muted">
+                                        Submitted: @submission.SubmittedAt.Value.ToString("MMM d, yyyy h:mm tt")
+                                    </span>
+                                }
+                            </div>
+                            
+                            @if (!string.IsNullOrEmpty(submission.Body))
+                            {
+                                bool isExpanded = _expandedHtmlSubmissions.Contains(submission.Id);
+                                if (!isExpanded)
+                                {
+                                    <div class="submission-body">
+                                        @(submission.Body.Length > 200 ? submission.Body.Substring(0, 200) + "..." : submission.Body)
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleHtml(submission.Id)">Render HTML</button>
+                                }
+                                else
+                                {
+                                    <div class="submission-body-html">
+                                        @((MarkupString)SanitizeHtml(submission.Body))
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleHtml(submission.Id)">Hide HTML</button>
+                                }
+                            }
+                            
+                            @if (submission.Attachments.Any())
+                            {
+                                <div class="attachments">
+                                    <small class="text-muted">
+                                        <i class="fas fa-paperclip me-1"></i>
+                                        @submission.Attachments.Count attachment(s): 
+                                        @string.Join(", ", submission.Attachments.Select(a => a.Filename))
+                                    </small>
+                                </div>
+                            }
+                        </div>
+                    }
+                    
+                    @if (_submissions.Count > 10)
+                    {
+                        <div class="more-submissions">
+                            <small class="text-muted">And @(_submissions.Count - 10) more submissions...</small>
+                        </div>
+                    }
+                </div>
+            </div>
+            
+            @if (Assignment.HasDownloadedSubmissions)
+            {
+                <div class="analysis-section">
+                    <div class="analysis-header">
+                        <h5>AI Analysis</h5>
+                        <button class="btn btn-success" @onclick="StartAnalysis" disabled="@(_isAnalyzing || _hasAnalysis)">
+                            @if (_isAnalyzing)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                <text>Analyzing...</text>
+                            }
+                            else if (_hasAnalysis)
+                            {
+                                <i class="fas fa-check me-1"></i>
+                                <text>Analysis Complete</text>
+                            }
+                            else
+                            {
+                                <i class="fas fa-brain me-1"></i>
+                                <text>Start Analysis</text>
+                            }
+                        </button>
+                    </div>
+                    
+                    @if (_hasAnalysis && _analysisResult != null)
+                    {
+                        <div class="analysis-results">
+                            <div class="analysis-summary">
+                                <MarkdownRenderer Content="@_analysisResult.Summary" />
+                            </div>
+                            
+                            @if (_analysisResult.StandoutSubmissions.Any())
+                            {
+                                <div class="standout-submissions">
+                                    <h6><i class="fas fa-star text-warning me-1"></i> Standout Submissions</h6>
+                                    @foreach (var standout in _analysisResult.StandoutSubmissions.Take(3))
+                                    {
+                                        <div class="standout-item">
+                                            <strong>@standout.StudentName</strong> - @standout.StandoutReason
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                    
+                    <div class="custom-questions">
+                        <h6>Ask Custom Questions</h6>
+                        <div class="question-input">
+                            <textarea class="form-control mb-2" rows="3" @bind="_customQuestion" 
+                                      placeholder="Ask questions about the submissions..."
+                                      disabled="@(!_hasAnalysis || _isAnswering)"></textarea>
+                            <button class="btn btn-info" @onclick="AskCustomQuestion" 
+                                    disabled="@(string.IsNullOrWhiteSpace(_customQuestion) || !_hasAnalysis || _isAnswering)">
+                                @if (_isAnswering)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                    <text>Thinking...</text>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-paper-plane me-1"></i>
+                                    <text>Ask Question</text>
+                                }
+                            </button>
+                        </div>
+                        
+                        @if (_questionAnswers.Any())
+                        {
+                            <div class="questions-history">
+                                <h6>Questions & Answers</h6>
+                                @foreach (var qa in _questionAnswers.TakeLast(3))
+                                {
+                                    <div class="qa-item">
+                                        <div class="question">
+                                            <strong>Q:</strong> @qa.Question
+                                        </div>
+                                        <div class="answer">
+                                            <strong>A:</strong>
+                                            <MarkdownRenderer Content="@qa.Answer" />
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+        else if (!_isLoading)
+        {
+            <div class="no-submissions">
+                <i class="fas fa-inbox fa-2x text-muted mb-3"></i>
+                <h5>No submissions found</h5>
+                <p class="text-muted">This assignment doesn't have any submissions yet.</p>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public DbAssignment? Assignment { get; set; }
+    
+    private List<DbSubmission>? _submissions;
+    private bool _isLoading = false;
+    private bool _isRefreshing = false;
+    private bool _isDownloading = false;
+    private bool _isAnalyzing = false;
+    private bool _isAnswering = false;
+    private bool _hasAnalysis = false;
+    private string _statusMessage = "";
+    private string _errorMessage = "";
+    private string _customQuestion = "";
+    private OverallAnalysis? _analysisResult;
+    private List<QuestionAnswer> _questionAnswers = new();
+    private HashSet<long> _expandedHtmlSubmissions = new();
+    
+    public class QuestionAnswer
+    {
+        public string Question { get; set; } = "";
+        public string Answer { get; set; } = "";
+    }
+    
+    protected override async Task OnParametersSetAsync()
+    {
+        // Always clear existing analysis data when assignment changes
+        _hasAnalysis = false;
+        _analysisResult = null;
+        _questionAnswers.Clear();
+        _customQuestion = "";
+        _expandedHtmlSubmissions.Clear();
+        _errorMessage = "";
+        
+        if (Assignment != null)
+        {
+            await LoadSubmissions();
+            await CheckForExistingAnalysis();
+        }
+        else
+        {
+            _submissions = null;
+        }
+    }
+    
+    private async Task LoadSubmissions()
+    {
+        if (Assignment == null) return;
+        
+        try
+        {
+            _isLoading = true;
+            _statusMessage = "Loading submissions...";
+            _errorMessage = "";
+            
+            _submissions = await CanvasDataService.GetSubmissionsAsync(Assignment.Id);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+    
+    private async Task RefreshSubmissions()
+    {
+        if (Assignment == null) return;
+        
+        try
+        {
+            _isRefreshing = true;
+            _errorMessage = "";
+            
+            _submissions = await CanvasDataService.GetSubmissionsAsync(Assignment.Id, forceSync: true);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isRefreshing = false;
+        }
+    }
+    
+    private async Task DownloadSubmissions()
+    {
+        if (Assignment == null) return;
+        
+        try
+        {
+            _isDownloading = true;
+            _statusMessage = "Downloading submissions...";
+            _errorMessage = "";
+            StateHasChanged(); // Force UI update
+            
+            Console.WriteLine($"Starting download for assignment: {Assignment.Name} (ID: {Assignment.Id})");
+            
+            var baseDownloadPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "AiGrader_Downloads");
+            Console.WriteLine($"Base download path: {baseDownloadPath}");
+            
+            var downloadPath = await CanvasDataService.DownloadSubmissionsAsync(Assignment.Id, baseDownloadPath);
+            Console.WriteLine($"Download completed to: {downloadPath}");
+            
+            Assignment.HasDownloadedSubmissions = true;
+            Assignment.LocalSubmissionsPath = downloadPath;
+            
+            // Refresh submissions so they become visible after first download (in case initial list was empty)
+            try
+            {
+                _submissions = await CanvasDataService.GetSubmissionsAsync(Assignment.Id);
+            }
+            catch (Exception refreshEx)
+            {
+                Console.WriteLine($"Error reloading submissions after download: {refreshEx}");
+            }
+
+            if (_submissions?.Any() == true)
+            {
+                _statusMessage = $"Downloaded {_submissions.Count} submission(s) to: {downloadPath}";
+            }
+            else
+            {
+                _statusMessage = "No submissions were found for this assignment.";
+            }
+            StateHasChanged(); // Force UI update
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Download error: {ex}");
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isDownloading = false;
+            StateHasChanged(); // Force UI update
+        }
+    }
+    
+    private async Task StartAnalysis()
+    {
+        if (Assignment == null || _submissions == null) return;
+        
+        try
+        {
+            _isAnalyzing = true;
+            _errorMessage = "";
+            
+            var submissionAnalyses = _submissions.Select(s => new SubmissionAnalysis
+            {
+                StudentName = s.StudentName,
+                SubmissionContent = s.Body ?? ""
+            }).ToList();
+            
+            _analysisResult = await AiService.AnalyzeSubmissionsAsync(submissionAnalyses, Assignment.Name);
+            _hasAnalysis = true;
+            
+            var analysisJson = System.Text.Json.JsonSerializer.Serialize(_analysisResult);
+            await CanvasDataService.SaveAnalysisAsync(Assignment.Id, analysisJson);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isAnalyzing = false;
+        }
+    }
+    
+    private async Task AskCustomQuestion()
+    {
+        if (string.IsNullOrWhiteSpace(_customQuestion) || _analysisResult == null) return;
+        
+        try
+        {
+            _isAnswering = true;
+            
+            var contextualQuestion = $"Based on the assignment analysis, please answer: {_customQuestion}\n\nAnalysis Summary: {_analysisResult.Summary}";
+            
+            var questionSubmission = new List<SubmissionAnalysis>
+            {
+                new SubmissionAnalysis
+                {
+                    StudentName = "Context",
+                    SubmissionContent = contextualQuestion
+                }
+            };
+            
+            var questionAnalysis = await AiService.AnalyzeSubmissionsAsync(questionSubmission, "Question Response");
+            
+            _questionAnswers.Add(new QuestionAnswer
+            {
+                Question = _customQuestion,
+                Answer = questionAnalysis.Summary
+            });
+            
+            _customQuestion = "";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isAnswering = false;
+        }
+    }
+    
+    private async Task CheckForExistingAnalysis()
+    {
+        if (Assignment == null) return;
+        
+        try
+        {
+            var existingAnalysis = await CanvasDataService.GetLatestAnalysisAsync(Assignment.Id);
+            if (!string.IsNullOrEmpty(existingAnalysis))
+            {
+                _analysisResult = System.Text.Json.JsonSerializer.Deserialize<OverallAnalysis>(existingAnalysis);
+                _hasAnalysis = true;
+            }
+        }
+        catch
+        {
+            // Ignore errors when loading existing analysis
+        }
+    }
+    
+    private void ClearError()
+    {
+        _errorMessage = "";
+    }
+
+    private void ToggleHtml(long submissionId)
+    {
+        if (!_expandedHtmlSubmissions.Add(submissionId))
+        {
+            _expandedHtmlSubmissions.Remove(submissionId);
+        }
+    }
+
+    // Minimal HTML sanitization: remove <script> and <style> blocks and on* event attributes.
+    // For production, consider a robust library like Ganss.Xss.
+    private string SanitizeHtml(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return string.Empty;
+        try
+        {
+            // Remove script/style tags
+            var withoutScripts = System.Text.RegularExpressions.Regex.Replace(html, "<script[\\s\\S]*?</script>", string.Empty, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            withoutScripts = System.Text.RegularExpressions.Regex.Replace(withoutScripts, "<style[\\s\\S]*?</style>", string.Empty, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            // Remove on*="..." and on*='...' event handlers (case-insensitive)
+            withoutScripts = System.Text.RegularExpressions.Regex.Replace(
+                withoutScripts,
+                @"\son[\w-]+\s*=\s*(""[^""]*""|'[^']*')",
+                string.Empty,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return withoutScripts;
+        }
+        catch
+        {
+            return html; // Fallback to original if sanitization fails
+        }
+    }
+}
+
+<style>
+    .assignment-details {
+        padding: 1.5rem;
+        height: calc(100vh - 2rem);
+        overflow-y: auto;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        margin: 1rem;
+        border-radius: 1rem;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        flex: 1;
+    }
+    
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 50vh;
+        text-align: center;
+    }
+    
+    .assignment-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 2rem;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 1rem;
+    }
+    
+    .assignment-info h3 {
+        margin-bottom: 0.5rem;
+        color: #495057;
+    }
+    
+    .action-buttons {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .loading-section {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        color: #6c757d;
+    }
+    
+    .submissions-section {
+        margin-bottom: 2rem;
+    }
+    
+    .submissions-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    
+    .download-status {
+        font-size: 0.875rem;
+    }
+    
+    .submissions-list {
+        max-height: 400px;
+        overflow-y: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+    }
+    
+    .submission-card {
+        padding: 1rem;
+        border-bottom: 1px solid #f8f9fa;
+    }
+    
+    .submission-card:last-child {
+        border-bottom: none;
+    }
+    
+    .submission-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+    
+    .submission-body {
+        margin-bottom: 0.5rem;
+        padding: 0.5rem;
+        background-color: #f8f9fa;
+        border-radius: 0.25rem;
+        font-size: 0.875rem;
+        white-space: pre-wrap;
+    }
+
+    .submission-body-html {
+        margin: 0.5rem 0;
+        padding: 0.75rem;
+        background-color: #fff;
+        border: 1px solid #e9ecef;
+        border-radius: 0.25rem;
+        font-size: 0.875rem;
+        max-height: 400px;
+        overflow: auto;
+    }
+    
+    .attachments {
+        margin-top: 0.5rem;
+    }
+    
+    .more-submissions {
+        padding: 1rem;
+        text-align: center;
+        background-color: #f8f9fa;
+    }
+    
+    .analysis-section {
+        border-top: 1px solid #dee2e6;
+        padding-top: 2rem;
+    }
+    
+    .analysis-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    
+    .analysis-results {
+        margin-bottom: 2rem;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-radius: 0.375rem;
+    }
+    
+    .standout-submissions {
+        margin-top: 1rem;
+    }
+    
+    .standout-item {
+        padding: 0.5rem;
+        margin: 0.25rem 0;
+        background-color: white;
+        border-radius: 0.25rem;
+        font-size: 0.875rem;
+    }
+    
+    .custom-questions {
+        margin-top: 2rem;
+    }
+    
+    .question-input {
+        margin-bottom: 1rem;
+    }
+    
+    .questions-history {
+        margin-top: 1rem;
+    }
+    
+    .qa-item {
+        margin-bottom: 1rem;
+        padding: 1rem;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        background-color: white;
+    }
+    
+    .question {
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+    }
+    
+    .answer {
+        color: #495057;
+    }
+    
+    .no-submissions {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 30vh;
+        text-align: center;
+    }
+</style>

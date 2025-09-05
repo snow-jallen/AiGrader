@@ -7,6 +7,46 @@
     <base href="~/" />
     <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
     <link href="css/site.css" rel="stylesheet" />
+    <!-- Font Awesome for button icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <!-- Bootstrap Icons as fallback -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <!-- Fallback styles for when icons don't load - using higher specificity -->
+    <style>
+        /* Force icon display with high specificity */
+        i.fas, i.fa, .fas, .fa {
+            display: inline-block !important;
+            width: 1em !important;
+            text-align: center !important;
+            font-style: normal !important;
+        }
+        
+        /* Fallback content for specific icons */
+        i.fa-sync::before, i.fas.fa-sync::before, .fa-sync::before { content: "🔄" !important; font-family: inherit !important; }
+        i.fa-chevron-down::before, i.fas.fa-chevron-down::before, .fa-chevron-down::before { content: "▼" !important; font-family: inherit !important; }
+        i.fa-chevron-right::before, i.fas.fa-chevron-right::before, .fa-chevron-right::before { content: "▶" !important; font-family: inherit !important; }
+        i.fa-check::before, i.fas.fa-check::before, .fa-check::before { content: "✓" !important; font-family: inherit !important; }
+        i.fa-times::before, i.fas.fa-times::before, .fa-times::before { content: "✕" !important; font-family: inherit !important; }
+        i.fa-edit::before, i.fas.fa-edit::before, .fa-edit::before { content: "✏" !important; font-family: inherit !important; }
+        i.fa-eye::before, i.fas.fa-eye::before, .fa-eye::before { content: "👁" !important; font-family: inherit !important; }
+        i.fa-eye-slash::before, i.fas.fa-eye-slash::before, .fa-eye-slash::before { content: "🙈" !important; font-family: inherit !important; }
+        i.fa-clock::before, i.fas.fa-clock::before, .fa-clock::before { content: "🕐" !important; font-family: inherit !important; }
+        i.fa-download::before, i.fas.fa-download::before, .fa-download::before { content: "⬇" !important; font-family: inherit !important; }
+        i.fa-cloud-download-alt::before, i.fas.fa-cloud-download-alt::before, .fa-cloud-download-alt::before { content: "💾" !important; font-family: inherit !important; }
+        i.fa-exclamation-triangle::before, i.fas.fa-exclamation-triangle::before, .fa-exclamation-triangle::before { content: "⚠️" !important; font-family: inherit !important; }
+        i.fa-arrow-left::before, i.fas.fa-arrow-left::before, .fa-arrow-left::before { content: "←" !important; font-family: inherit !important; }
+        i.fa-check-circle::before, i.fas.fa-check-circle::before, .fa-check-circle::before { content: "✅" !important; font-family: inherit !important; }
+        i.fa-paperclip::before, i.fas.fa-paperclip::before, .fa-paperclip::before { content: "📎" !important; font-family: inherit !important; }
+        i.fa-brain::before, i.fas.fa-brain::before, .fa-brain::before { content: "🧠" !important; font-family: inherit !important; }
+        i.fa-star::before, i.fas.fa-star::before, .fa-star::before { content: "⭐" !important; font-family: inherit !important; }
+        i.fa-paper-plane::before, i.fas.fa-paper-plane::before, .fa-paper-plane::before { content: "📤" !important; font-family: inherit !important; }
+        i.fa-inbox::before, i.fas.fa-inbox::before, .fa-inbox::before { content: "📥" !important; font-family: inherit !important; }
+        
+        /* Reset any font-family overrides that might prevent icons from showing */
+        .fas, .fa, i.fas, i.fa {
+            font-family: inherit !important;
+        }
+    </style>
     <component type="typeof(HeadOutlet)" render-mode="ServerPrerendered" />
 </head>
 <body>
